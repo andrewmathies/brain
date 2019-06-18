@@ -1,6 +1,6 @@
 #!/bin/bash
 
-rm /home/andrew/git/brain/nohup.out
+rm /home/andrew/git/socket/nohup.out
 echo "removed old log file"
 
 sudo pkill node
