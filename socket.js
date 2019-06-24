@@ -98,7 +98,7 @@ function publish(type, beanID) {
 }
 
 function hash(beanID) {
-    return fnv.hash(beanID, 64)
+    return fnv.hash(beanID, 64).dec()
 }
 
 function update(key) {
