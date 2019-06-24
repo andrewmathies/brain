@@ -1,17 +1,20 @@
 Clay
 
-- get environment set up (2 hours)
+- get environment set up
     - visual studio code
     - putty (ssh ppk file)
     - cmder
-- change color of h1, use online color https://coolors.co/ or similar, and colors form style.css, sit and help (1 hour)
-- he can make new search bar page with autocomplete, use same color palette 
+- change color of h1, use online color https://coolors.co/ or similar, and colors form style.css
+- potential tasks
+    make new search bar page with autocomplete, use same color palette
+    change code to only rebuild table items that have changed
+    change look of table page (background, table formatting and size)
     
-    
+------------------------------------------------------------------------------    
+
 Tasks
     HIGH PRIORITY
-    - mqtt publish success and failed message on response from updater program 
-    - get version from ERD on init request
+    - clean up index.js
 
     LOW PRIORITY
     - for search bar: change API endpoint /api/units/ to use <lab id> instead of <unit id>
