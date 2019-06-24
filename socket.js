@@ -1,19 +1,16 @@
-const apUpdate = require('../applcommon.sbc-pi-update/index')
-
-const net = require('net')
-const fs = require('fs')
-const fastcsv = require('fast-csv')
-
-const localCSVPath = '/home/andrew/git/brain/dict.csv'
-const serverPort = 3000
-const serverIP = '18.217.44.191'
-// ec2 ip - '18.223.114.193'
+const unitManager = require('../applcommon.sbc-pi-update/index')
+const mqtt = require('mqtt')
+const usb = require('usb')
+const GeaNode = require('gea-communication').DualNode
+const SegFaultHandler = require('segfault-handler')
 
 let unitDict = []
-let nodeDict = []
 let q = []
 
-let taskRunning = false
+let updating = false
+
+const mqttClient = mqtt.connect('tls://saturten.com:8883', {username: 'andrew', password: '1plus2is3'})
+const geaNode = createNode()
 
 class Unit {
 	constructor(beanID, version, node) {
@@ -23,12 +20,26 @@ class Unit {
 	}
 }
 
+const message = {
+    HELLO: 0,
+    SUCCESS: 1,
+    FAIL: 2
+}   
+
 // "Main" -------------------------------------------------------------
 
-// get list of beans, then set up the TCP socket to go server
-apUpdate.getGeaNodes((ret) => {
-	for (let i = 0; i < ret.length; i++) {
-		nodeDict[ret[i].uid()] = ret[i]
+SegfaultHandler.registerHandler('crash.log')
+
+getNodes()
+
+initMqtt()
+
+apUpdate.getGeaNodes((nodeList) => {
+	for (let i = 0; i < nodeList.length; i++) {
+        let beanID = nodeList[i].uid()
+        //let version = await apUpdate.readVersion(nodeList[i])
+        let unit = new Unit(beanID, '', nodeList[i])
+		unitDict[beanID] = unit
 	}
 
 	console.log('GEA - Connected to all of the beans we found')
@@ -36,110 +47,109 @@ apUpdate.getGeaNodes((ret) => {
 })
 
 // Functions ----------------------------------------------------------
-// open TCP socket and connect with server
-
-function establishConnection() {
-	let client = new net.Socket()
-
-	client.connect(serverPort, serverIP, function() {
-		console.log('TCP SOCKET - Connected to server')
-		client.write('yo')
-		// TODO send list of versions we have downloaded to server
-	})
-
-	client.on('data', function(data) {
-		console.log('TCP SOCKET - Recieved: ' + data)
-
-		let req = isJson(data)
-	
-		if (Boolean(req)) {
-			handlePost(req)
-		} else {
-			parseRecords(data)
+ 
+client.on('connect', () => {
+    for (let [beanID, unit] of Object.entries(unitDict)) {
+        client.subscribe('/unit/' + beanID + '/', (err) => {
+        if (!err) {
+            let helloMsg = {header: 'Hello', version: unit.version}
+            client.publish('/unit/' + beanID + '/', JSON.stringify(helloMsg))
+        }
+            })
 		}
 	})
 
-	client.on('close', function() {
-		console.log('TCP SOCKET - Disconnected from server')
-	})
+    client.on('message', (topic, message) => {
+        console.log('topic: ' + topic)
+        console.log('message: ' + message.toString())
+
+        let topicParts = topic.split('/')
+        if (topicParts.length !== 4) {
+            console.log('unexpected topic')
+            return
+        }
+
+        let msg = JSON.parse(message.toString())
+        if (msg.header === 'StartUpdate') {
+            let key = topicParts[2]
+            unitDict[key].version = msg.version
+            update(key)
+        }
+    })
 }
 
+function publish(type, beanID) {
+    let msg
 
-function parseRecords(csv) {
-	let records = String(csv).split('_')
+    switch (type) {
+        case message.HELLO:
+            let key = hash(beanID)
+            let unit = unitDict[key]
+            msg = {header: 'Hello', version: unit.version}
+            break
+        case message.SUCCESS:
+            msg = {header: 'Success'}
+            break
+        case message.FAIL:
+            msg = {header: 'Fail'}
+            break
+        default:
+            console.log('ERR - mqtt publish request with unknown message type')
+            return
+    }
 
-	records.forEach(record => {
-		if (!record)
-			return
-		
-		let csvRow = '_' + record
-		let values = String(csvRow).split(',')
-
-		let node = nodeDict[values[2]]
-		let unit = new Unit(values[2], values[1], node)
-		let key = values[0]
-
-		unitDict[key] = unit
-	})
+    client.publish('unit/' + beanID + '/', JSON.stringify(msg))
 }
 
 function update(key) {
-	let unit = unitDict[key]
+	if (updating) {
+        q.push(key)
+	    return
+    }
 
-	if (taskRunning) {
-		console.log('QUEUE - Enqueueing task')
-		q.push(key)
-	} else {
-		console.log('UPDATE - Updating unit ' + key + ' to ' + unit.version)
-		apUpdate.update(unit)
-		taskRunning = true
-	}
+    updating = true
+
+    let unit = unitDict[key]
+	console.log('Updating unit ' + unit.beanID + ' to ' + unit.version)
+	unitManager.requestUpdate(unit.node, unit.version)
 }
 
-function handlePost(req) {
-	let key = req.id
+function createNode() {
+    let node = GeaNode()
+    
+    node._sendGea2 = node.sendGea2
+    node.sendGea2 = (...args) => {
+        node._sendGea2(...args)
+        node.sendGea3(...args)
+    }
 
-	switch(req.header) {
-		case 'addUnit':
-			let unit = new Unit(req.beanID, '', undefined)
-			unitDict[key] = unit
-			break
-		case 'removeUnit':
-			delete unitDict[key]
-			break
-		case 'updateVersion':
-			let requestedVersionString = req.version.split('.')[1]
-			let curVersionString = unitDict[key].version.split('.')[1]
-
-			if (requestedVersionString !== curVersionString) {
-				unitDict[key].version = req.version
-				update(key)
-			} else {
-				console.log('ERR - Requested update to unit ' + key + ' from ' + curVersionString + ' to ' + requestedVersionString)
-			}
-
-			break
-		default:
-			console.log('ERR - Dont know what to do with this request: ' + req.header)
-	}
+    return node
 }
 
-function isJson(str) {
-	try {
-		return JSON.parse(str)
-	} catch (e) {
-		return false
-	}
-}
+module.exports = {
+    function nodeResponse(node) {
+        let beanID = node.uid()
+        let key = hash(beanID)
+        unitDict[key].node = node
+        unitMananger.requestVersion(node)
+    }
 
-module.exports.taskFinish = function () {
-	taskRunning = false
-	
-	if (q.length == 0) {
-		console.log('QUEUE - Queue is empty, waiting for next task')
-	} else {
-		console.log('QUEUE - Dequeueing task')
-		let key = q.shift()
-		update(key)
-	}
+    function versionResponse(beanID, version) {
+        let key = hash(beanID)
+        unitDict[key].version = version
+    }
+
+    function updateResponse(beanID, result) {
+        updating = false
+
+        if (result)
+            publish(message.SUCCESS, beanID)
+        else
+            publish(message.FAIL, beanID)
+
+        if (q.length !== 0) {
+            let key = q.pop()
+            update(key)
+        }
+    }
 }
