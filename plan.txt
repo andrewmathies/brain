@@ -1,0 +1,59 @@
+Clay
+
+- get environment set up
+    - visual studio code
+    - putty (ssh ppk file)
+    - cmder
+- change color of h1, use online color https://coolors.co/ or similar, and colors form style.css
+- potential tasks
+    make new search bar page with autocomplete, use same color palette
+    change code to only rebuild table items that have changed
+    change look of table page (background, table formatting and size)
+    
+------------------------------------------------------------------------------    
+
+Tasks
+    HIGH PRIORITY
+    - clean up index.js
+
+    LOW PRIORITY
+    - for search bar: change API endpoint /api/units/ to use <lab id> instead of <unit id>
+    - change data structure in memory. An entry in the hashtable is a reference to a hashtable?
+
+
+requests to updater program:
+    - get bean ids
+    - read version from a unit
+    - update version on a unit
+        - success response
+        - failure response
+
+on usb plugin:
+    request bean id strings with master geaNode object in socket.js
+    for each bean id:
+        hash bean id
+        if hash does not exists in table:
+            request node object from index.js
+
+on node object response:
+    store node object in unit object in table
+    request version from index.js
+
+on version response:
+    store version in unit object in table
+
+on update publish:
+    request update from index.js
+
+on success update response:
+    publish success mqtt msg
+    update
+
+on failure update response:
+    publish failure mqtt msg
+    update
+
+if an update is in progress and an update publish is made, enq the update
+if an update is not in progress and an update publish is made, start the update
+if an update finishes and the q is empty, do nothing
+if an udpate finishes and the q ie not empty, deq the task and start the update
