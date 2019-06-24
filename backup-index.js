@@ -278,8 +278,6 @@ let done = []
 module.exports = {
 
 	getGeaNodes: async function(callback) {
-        SegfaultHandler.registerHandler("crash.log")
-
 		const geaNode = createNode()
 	    const MAX_TRIES = 3
 

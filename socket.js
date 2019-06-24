@@ -1,8 +1,9 @@
-const unitManager = require('../applcommon.sbc-pi-update/index')
 const mqtt = require('mqtt')
 const usb = require('usb')
-const GeaNode = require('gea-communication').DualNode
+const fnv = require('fnv-plus')
 const SegFaultHandler = require('segfault-handler')
+const GeaNode = require('gea-communication').DualNode
+const unitManager = require('../applcommon.sbc-pi-update/index')
 
 let unitDict = []
 let q = []
@@ -10,7 +11,7 @@ let q = []
 let updating = false
 
 const mqttClient = mqtt.connect('tls://saturten.com:8883', {username: 'andrew', password: '1plus2is3'})
-const geaNode = createNode()
+const masterNode = createNode()
 
 class Unit {
 	constructor(beanID, version, node) {
@@ -24,59 +25,54 @@ const message = {
     HELLO: 0,
     SUCCESS: 1,
     FAIL: 2
-}   
+}
 
 // "Main" -------------------------------------------------------------
 
-SegfaultHandler.registerHandler('crash.log')
+SegFaultHandler.registerHandler('crash.log')
 
-getNodes()
+(async () => {
+    await checkForNodes()
+})()
 
-initMqtt()
+// Event Listeners
+usb.on('attach', () => {
+    console.log('detected new usb device')
+    await checkForNodes()
+})
+ 
+mqttClient.on('connect', () => {
+    for (let [key, unit] of Object.entries(unitDict)) {
+        client.subscribe('unit/' + unit.beanID + '/', (err) => {
+            if (!err) {
+                publish(message.HELLO, unit.beanID)
+            }
+        })
+    }
+})
 
-apUpdate.getGeaNodes((nodeList) => {
-	for (let i = 0; i < nodeList.length; i++) {
-        let beanID = nodeList[i].uid()
-        //let version = await apUpdate.readVersion(nodeList[i])
-        let unit = new Unit(beanID, '', nodeList[i])
-		unitDict[beanID] = unit
-	}
+mqttClient.on('message', (topic, message) => {
+    console.log('topic: ' + topic)
+    console.log('message: ' + message.toString())
 
-	console.log('GEA - Connected to all of the beans we found')
-	establishConnection()
+    let topicParts = topic.split('/')
+
+    if (topicParts.length !== 3) {
+        console.log('unexpected topic')
+        return
+    }
+
+    let msg = JSON.parse(message.toString())
+
+    if (msg.header === 'StartUpdate') {
+        let beanID = topicParts[1]
+        let key = hash(beanID)
+        unitDict[key].version = msg.version
+        update(key)
+    }
 })
 
 // Functions ----------------------------------------------------------
- 
-client.on('connect', () => {
-    for (let [beanID, unit] of Object.entries(unitDict)) {
-        client.subscribe('/unit/' + beanID + '/', (err) => {
-        if (!err) {
-            let helloMsg = {header: 'Hello', version: unit.version}
-            client.publish('/unit/' + beanID + '/', JSON.stringify(helloMsg))
-        }
-            })
-		}
-	})
-
-    client.on('message', (topic, message) => {
-        console.log('topic: ' + topic)
-        console.log('message: ' + message.toString())
-
-        let topicParts = topic.split('/')
-        if (topicParts.length !== 4) {
-            console.log('unexpected topic')
-            return
-        }
-
-        let msg = JSON.parse(message.toString())
-        if (msg.header === 'StartUpdate') {
-            let key = topicParts[2]
-            unitDict[key].version = msg.version
-            update(key)
-        }
-    })
-}
 
 function publish(type, beanID) {
     let msg
@@ -101,6 +97,10 @@ function publish(type, beanID) {
     client.publish('unit/' + beanID + '/', JSON.stringify(msg))
 }
 
+function hash(beanID) {
+    return fnv.hash(beanID, 64)
+}
+
 function update(key) {
 	if (updating) {
         q.push(key)
@@ -112,6 +112,19 @@ function update(key) {
     let unit = unitDict[key]
 	console.log('Updating unit ' + unit.beanID + ' to ' + unit.version)
 	unitManager.requestUpdate(unit.node, unit.version)
+}
+
+async function checkForNodes() {
+    let nodes = await masterNode.list()
+
+    for (let i = 0; i < nodes.length; i++) {
+        let beanID = nodes[i].uid()
+        let key = hash(beanID)
+        
+        if (!(key in unitDict)) {
+            unitMananger.requestNode(beanID)
+        }
+    }
 }
 
 function createNode() {
@@ -127,19 +140,19 @@ function createNode() {
 }
 
 module.exports = {
-    function nodeResponse(node) {
+    nodeResponse: function (node) {
         let beanID = node.uid()
         let key = hash(beanID)
         unitDict[key].node = node
         unitMananger.requestVersion(node)
-    }
+    },
 
-    function versionResponse(beanID, version) {
+    versionResponse: function (beanID, version) {
         let key = hash(beanID)
         unitDict[key].version = version
-    }
+    },
 
-    function updateResponse(beanID, result) {
+    updateResponse: function (beanID, result) {
         updating = false
 
         if (result)
