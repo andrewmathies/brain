@@ -17,8 +17,10 @@
   },
   "homepage": "https://github.com/andrewmathies/brain#readme",
   "dependencies": {
-    "fast-csv": "^2.5.0",
+    "fnv-plus": "^1.2.12",
+    "gea-communication": "file:PCToolsJavascript.gea-communication",
     "mqtt": "^3.0.0",
+    "segfault-handler": "file:node-segfault-handler",
     "usb": "^1.6.0"
   }
 }
