@@ -31,3 +31,6 @@ ERD Read failed. host: 80, erd: 106
 ERD Read failed. host: 80, erd: 106
 ERD Read failed. host: 80, erd: 106
 ERR - cannot verify version
+PID 12370 received SIGSEGV for address: 0x4
+/home/pi/git/socket/node-segfault-handler/build/Release/segfault-handler.node(+0x23c8)[0x747d13c8]
+/lib/arm-linux-gnueabihf/libc.so.6(__default_rt_sa_restorer+0x0)[0x76b6b6c0]
